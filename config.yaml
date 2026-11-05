@@ -1,0 +1,21 @@
+# docconvert 配置
+# 所有 path 留空 = 自动探测（PATH + 各平台常见安装目录）。
+# 跨机器部署时若装在非标位置，在这里写死绝对路径即可，不用改代码。
+
+timeout: 300          # 单次办公文档转换超时（秒）
+pdf_dpi: 200          # PDF 转图片的渲染精度，200 够看，300 适合印刷
+image_quality: 92     # JPG/WebP 输出质量 1-100
+ocr_dpi: 300          # OCR 前把 PDF 渲染成图的分辨率，低了识别率崩
+media_timeout: 900    # 音视频转换超时（秒）
+
+engines:
+  libreoffice:
+    path: ""          # 例: C:\Program Files\LibreOffice\program\soffice.exe
+    timeout: 300
+  pandoc:
+    path: ""
+  tesseract:
+    path: ""
+    lang: chi_sim+eng
+  ffmpeg:
+    path: ""

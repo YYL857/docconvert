@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>docconvert · 离线格式转换</title>
+<style>
+:root{
+  --bg:#14161a; --panel:#1b1e24; --panel2:#22262e; --line:#2e333d;
+  --txt:#e6e8ec; --txt2:#9aa1ad; --txt3:#6b7280;
+  --accent:#5dcaa5; --accent-dim:#0f6e56; --warn:#ef9f27; --err:#e24b4a;
+  --radius:12px; --mono:ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--txt);
+  font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  font-size:14px; line-height:1.6; min-height:100vh;
+  display:flex; flex-direction:column;
+}
+header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:18px 32px; border-bottom:1px solid var(--line); flex-shrink:0;
+}
+.brand{font-size:17px; font-weight:600; letter-spacing:.5px}
+.brand span{color:var(--accent)}
+.badge{
+  display:inline-flex; align-items:center; gap:7px;
+  padding:5px 12px; border-radius:999px; font-size:12.5px;
+  background:var(--panel); border:1px solid var(--line); color:var(--txt2);
+}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--txt3)}
+.dot.ok{background:var(--accent)}
+.dot.partial{background:var(--warn)}
+main{flex:1; width:100%; max-width:960px; margin:0 auto; padding:28px 32px 40px}
+
+.drop{
+  border:1.5px dashed var(--line); border-radius:var(--radius);
+  padding:44px 24px; text-align:center; cursor:pointer;
+  transition:.16s border-color,.16s background;
+}
+.drop:hover,.drop.over{border-color:var(--accent); background:rgba(93,202,165,.05)}
+.drop-icon{font-size:26px; color:var(--accent); margin-bottom:10px}
+.drop-title{font-size:15px; font-weight:500; margin-bottom:6px}
+.drop-sub{font-size:12.5px; color:var(--txt3)}
+
+.toolbar{
+  display:flex; flex-wrap:wrap; align-items:center; gap:14px;
+  margin:20px 0 14px;
+}
+.toolbar label{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--txt2)}
+select,input[type=checkbox]{accent-color:var(--accent)}
+select{
+  background:var(--panel2); color:var(--txt); border:1px solid var(--line);
+  border-radius:8px; padding:6px 10px; font-size:13px; font-family:inherit;
+}
+button{
+  font-family:inherit; font-size:13.5px; font-weight:500;
+  padding:8px 18px; border-radius:8px; border:1px solid transparent;
+  background:var(--accent); color:#0b1f19; cursor:pointer; transition:.15s opacity;
+}
+button:hover:not(:disabled){opacity:.86}
+button:disabled{opacity:.35; cursor:not-allowed}
+button.ghost{background:transparent; color:var(--txt2); border-color:var(--line)}
+button.ghost:hover:not(:disabled){color:var(--txt); border-color:var(--txt3)}
+
+.queue{display:flex; flex-direction:column; gap:8px}
+.row{
+  display:grid; grid-template-columns:1fr auto auto; gap:14px; align-items:center;
+  background:var(--panel); border:1px solid var(--line);
+  border-radius:var(--radius); padding:13px 16px;
+}
+.row .name{font-size:13.5px; word-break:break-all}
+.row .meta{font-size:11.5px; color:var(--txt3); margin-top:3px}
+.row .ctl{display:flex; align-items:center; gap:10px}
+.state{font-size:12.5px; color:var(--txt2); white-space:nowrap; min-width:88px; text-align:right}
+.state.ok{color:var(--accent)}
+.state.warn{color:var(--warn)}
+.state.err{color:var(--err)}
+.warnbox{
+  grid-column:1/-1; font-size:12px; color:var(--warn);
+  background:rgba(239,159,39,.07); border-left:2px solid var(--warn);
+  padding:7px 11px; border-radius:6px; margin-top:2px;
+}
+a.dl{
+  color:var(--accent); text-decoration:none; font-size:12.5px;
+  padding:5px 12px; border:1px solid var(--accent-dim); border-radius:7px;
+}
+a.dl:hover{background:rgba(93,202,165,.1)}
+footer{
+  padding:14px 32px; border-top:1px solid var(--line);
+  font-size:12px; color:var(--txt3); text-align:center; flex-shrink:0;
+}
+.spin{
+  display:inline-block; width:11px; height:11px; margin-right:5px;
+  border:1.6px solid var(--txt3); border-top-color:var(--accent);
+  border-radius:50%; animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">doc<span>convert</span></div>
+  <div class="badge"><span class="dot" id="dot"></span><span id="engineText">检测引擎…</span></div>
+</header>
+
+<main>
+  <div class="drop" id="drop">
+    <div class="drop-icon">↓</div>
+    <div class="drop-title">把文件拖到这里</div>
+    <div class="drop-sub">或点击选择 · docx / xlsx / pptx / pdf / png / jpg / md / csv …</div>
+    <input type="file" id="fileInput" multiple hidden>
+  </div>
+
+  <div class="toolbar">
+    <label>引擎
+      <select id="engineSel"><option value="">自动选择</option></select>
+    </label>
+    <label><input type="checkbox" id="ocrChk"> 扫描件走 OCR</label>
+    <button id="runBtn" disabled>开始转换</button>
+    <button id="clearBtn" class="ghost">清空</button>
+  </div>
+
+  <div class="queue" id="queue"></div>
+</main>
+
+<footer id="footer">docconvert · 本地离线转换，文件不离开这台电脑</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+let STATUS = null;
+let items = [];          // {id, file, to, state, msg, warn, download}
+
+// ---------------- 初始化 ----------------
+async function loadStatus(){
+  try{
+    STATUS = await (await fetch('/api/status')).json();
+    const okCount = STATUS.ready, total = STATUS.total;
+    $('#engineText').textContent = `引擎 ${okCount}/${total} 就绪`;
+    $('#dot').className = 'dot ' + (okCount === total ? 'ok' : okCount ? 'partial' : '');
+    const sel = $('#engineSel');
+    STATUS.engines.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e.name;
+      o.textContent = `${e.label}${e.ok ? '' : '（未就绪）'}`;
+      o.disabled = !e.ok;
+      sel.appendChild(o);
+    });
+    $('#footer').textContent =
+      `docconvert · 本地离线转换，文件不离开这台电脑 · 单文件上限 ${STATUS.max_upload_human}`;
+  }catch(err){
+    $('#engineText').textContent = '无法连接服务';
+  }
+}
+
+// ---------------- 队列 ----------------
+function targetsFor(ext){
+  if(!STATUS) return [];
+  return (STATUS.reach && STATUS.reach[ext]) || [];
+}
+
+function addFiles(files){
+  for(const f of files){
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    const targets = targetsFor(ext);
+    // 默认选 pdf（最常见），否则第一个可用的
+    const preferred = targets.includes('pdf') ? 'pdf' : (targets[0] || '');
+    items.push({
+      id: Math.random().toString(36).slice(2),
+      file: f, ext, targets, to: preferred,
+      state: targets.length ? 'wait' : 'unsupported',
+      msg: '', warn: [], download: ''
+    });
+  }
+  render();
+}
+
+function render(){
+  const q = $('#queue');
+  q.innerHTML = '';
+  items.forEach(it => {
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const info = document.createElement('div');
+    const size = (it.file.size/1024/1024).toFixed(1);
+    info.innerHTML = `<div class="name">${escapeHtml(it.file.name)}</div>
+      <div class="meta">${it.ext || '无扩展名'} · ${size} MB</div>`;
+
+    const ctl = document.createElement('div');
+    ctl.className = 'ctl';
+    if(it.targets.length){
+      const sel = document.createElement('select');
+      it.targets.forEach(t => {
+        const o = document.createElement('option');
+        o.value = t; o.textContent = '→ ' + t;
+        if(t === it.to) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.disabled = (it.state === 'running' || it.state === 'done');
+      sel.onchange = () => { it.to = sel.value; };
+      ctl.appendChild(sel);
+    }
+
+    const st = document.createElement('div');
+    st.className = 'state';
+    const label = {
+      wait:'等待', running:'<span class="spin"></span>转换中',
+      done:'完成', err:'失败', unsupported:'不支持', skipped:'跳过'
+    }[it.state] || it.state;
+    st.innerHTML = label + (it.msg ? ` · ${it.msg}` : '');
+    if(it.state === 'done') st.classList.add('ok');
+    if(it.state === 'err' || it.state === 'unsupported') st.classList.add('err');
+
+    const act = document.createElement('div');
+    if(it.state === 'done' && it.download){
+      const a = document.createElement('a');
+      a.className = 'dl'; a.href = it.download; a.textContent = '下载';
+      a.setAttribute('download', '');
+      act.appendChild(a);
+    }
+
+    row.append(info, ctl, st, act);
+
+    if(it.warn && it.warn.length){
+      const w = document.createElement('div');
+      w.className = 'warnbox';
+      w.textContent = it.warn.join('；');
+      row.appendChild(w);
+    }
+    q.appendChild(row);
+  });
+  $('#runBtn').disabled = !items.some(it => it.state === 'wait');
+}
+
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------------- 转换 ----------------
+async function runOne(it){
+  it.state = 'running'; it.msg = ''; it.warn = []; render();
+
+  const qs = new URLSearchParams({to: it.to, name: it.file.name});
+  const eng = $('#engineSel').value;
+  if(eng) qs.set('engine', eng);
+  if($('#ocrChk').checked) qs.set('ocr', '1');
+
+  try{
+    const r = await fetch('/api/convert?' + qs.toString(), {
+      method: 'PUT', body: it.file
+    });
+    const data = await r.json();
+    if(data.ok){
+      it.state = 'done';
+      it.msg = data.size_human;
+      it.warn = data.warn || [];
+      it.download = data.download;
+    }else{
+      it.state = 'err';
+      it.msg = (data.error || '转换失败').slice(0, 90);
+    }
+  }catch(e){
+    it.state = 'err';
+    it.msg = String(e).slice(0, 80);
+  }
+  render();
+}
+
+async function runAll(){
+  $('#runBtn').disabled = true;
+  // 串行：LibreOffice 并发吃内存，一个个来更稳
+  for(const it of items){
+    if(it.state === 'wait') await runOne(it);
+  }
+  render();
+}
+
+// ---------------- 事件 ----------------
+const drop = $('#drop'), fileInput = $('#fileInput');
+drop.onclick = () => fileInput.click();
+fileInput.onchange = e => { addFiles(e.target.files); fileInput.value = ''; };
+
+['dragenter','dragover'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev =>
+  drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { if(e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+$('#runBtn').onclick = runAll;
+$('#clearBtn').onclick = () => { items = []; render(); };
+
+loadStatus();
+</script>
+</body>
+</html>

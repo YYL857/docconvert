@@ -1,0 +1,44 @@
+# ============================================================
+# 引擎二进制与安装包：绝对不进仓库
+# bin/ 约 2.3GB（LibreOffice 1.6GB + ffmpeg/pandoc/tesseract），
+# install/vendor/ 约 890MB（各引擎安装包）。
+# GitHub 单文件超 100MB 直接拒收，仓库超 1GB 会警告。
+# 这两个目录由 install/install.ps1 或手动部署生成，不是源码。
+# ============================================================
+bin/
+install/vendor/
+
+# 测试与临时产物
+_work/
+*.log
+lo_msiexec.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# 本机特定配置（config.yaml 作为模板提交，本地覆盖用 config.local.yaml）
+config.local.yaml
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 转换测试留下的东西
+*.tmp
+~$*

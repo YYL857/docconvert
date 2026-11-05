@@ -1,0 +1,21 @@
+# docconvert Python 依赖（不含系统级引擎）
+# 安装：pip install -r requirements.txt
+# 离线：pip download -d install/vendor/wheels -r requirements.txt
+
+# PDF 读取、渲染、文本提取（核心，建议必装）
+pymupdf>=1.24
+
+# docx 原生读写（核心，无 LibreOffice 时的兜底）
+python-docx>=1.1
+
+# xlsx 原生读写
+openpyxl>=3.1
+
+# 位图互转、图片合成 PDF
+pillow>=10.0
+
+# 解析 config.yaml
+pyyaml>=6.0
+
+# pptx 文本提取（可选，装了才能 pptx->txt）
+python-pptx>=0.6.23
