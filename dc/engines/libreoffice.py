@@ -75,6 +75,71 @@ def _probe_textboxes(docx_path):
         return 0, -1
 
 
+def _fit_xlsx_columns(src):
+    """把 xlsx 列宽调到能装下内容，返回临时文件路径（不改源文件）。
+
+    Excel 默认列宽 8.43 字符，长 URL / 邮箱地址远超这个宽度。在 Excel 里
+    它会「溢出」到右侧空白单元格，看着正常；但转成 PDF 后右侧单元格有内容，
+    就变成文字互相覆盖 —— 一列一列粘在一起，完全没法看。
+
+    这里按内容估算宽度重存一份给 LO 用。只在「需要加宽」时动，
+    已有列宽设置不会被压窄。
+    """
+    try:
+        from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return None
+
+    try:
+        wb = load_workbook(src)
+    except Exception:
+        return None
+
+    changed = False
+    for ws in wb.worksheets:
+        # 列变宽后容易超页宽，LO 会把右侧几列甩到第二页，表格被横向切断。
+        # 让 LO 缩放到一页宽。列数太多时不强求（会缩到看不清）。
+        if (ws.max_column or 0) <= 8:
+            try:
+                from openpyxl.worksheet.properties import PageSetupProperties
+                ws.sheet_properties.pageSetUpPr = PageSetupProperties(fitToPage=True)
+                ws.page_setup.fitToWidth = 1
+                ws.page_setup.fitToHeight = 0
+                changed = True
+            except Exception:
+                pass
+
+        for col in range(1, (ws.max_column or 0) + 1):
+            best = 0
+            for row in range(1, min(ws.max_row or 1, 300) + 1):
+                v = ws.cell(row, col).value
+                if v is None:
+                    continue
+                # 中文按 2 个字符宽估算
+                w = sum(2 if ord(ch) > 127 else 1 for ch in str(v))
+                if w > best:
+                    best = w
+            if not best:
+                continue
+            letter = get_column_letter(col)
+            cur = ws.column_dimensions[letter].width or 8.43
+            if best + 2 > cur:
+                ws.column_dimensions[letter].width = min(best + 2, 60)
+                changed = True
+
+    if not changed:
+        wb.close()
+        return None
+
+    tmp = Path(tempfile.gettempdir()) / f"dc-fit-{uuid.uuid4().hex[:8]}.xlsx"
+    try:
+        wb.save(tmp)
+    finally:
+        wb.close()
+    return tmp
+
+
 class LibreOfficeEngine(Engine):
     info = EngineInfo(
         name="libreoffice",
@@ -173,6 +238,14 @@ class LibreOfficeEngine(Engine):
         profile.mkdir(parents=True, exist_ok=True)
         profile_url = profile.resolve().as_uri()
 
+        # 表格转 PDF：先按内容适配列宽（Excel 默认列宽装不下长 URL，会挤成一坨）
+        feed_src = src
+        fitted = None
+        if src_ext in ("xlsx", "xlsm") and dst_ext in ("pdf", "png", "jpg", "jpeg"):
+            fitted = _fit_xlsx_columns(src)
+            if fitted is not None:
+                feed_src = str(fitted)
+
         outdir = str(Path(dst).parent)
         cmd = [
             self.bin,
@@ -191,12 +264,12 @@ class LibreOfficeEngine(Engine):
         cmd += [
             "--convert-to", LO_FILTERS[dst_ext],
             "--outdir", outdir,
-            src,
+            feed_src,
         ]
         r, secs = run_timed(cmd, timeout=self.timeout)
 
         # LO 的产物名恒为「源 basename + 目标扩展名」，与用户要的文件名可能不同
-        produced = Path(outdir) / (Path(src).stem + "." + dst_ext)
+        produced = Path(outdir) / (Path(feed_src).stem + "." + dst_ext)
         if not produced.exists():
             # 大小写/变体兜底：在同目录里找刚生成的同扩展名文件
             recent = sorted(Path(outdir).glob(f"*.{dst_ext}"),
@@ -224,6 +297,11 @@ class LibreOfficeEngine(Engine):
                 final = produced  # 挪不动就交付原位置，别丢产物
 
         shutil.rmtree(profile, ignore_errors=True)
+        if fitted is not None:
+            try:
+                fitted.unlink()
+            except OSError:
+                pass
         warn = []
         if src_ext == "pdf" and dst_ext in ("docx", "doc", "odt", "rtf"):
             boxes, body_chars = _probe_textboxes(str(final))

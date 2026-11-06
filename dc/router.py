@@ -158,7 +158,16 @@ def convert(src, dst, engines, force=None, ocr=False, **opts):
             return r
         errs.append(f"{e.name}: {r.message}")
 
-    # 全部失败：把每一家的失败原因摊开，别只说"转换失败"
+    # 全部失败：先试一次链式兜底（两段式），再决定报错
+    # 典型救的场景：腾讯文档/WPS 导出的 docx，styles.xml 是空标签，
+    # LO 直接 "source file could not be loaded"，但 pandoc 能读出来。
+    from .chain import via_html
+    chained = via_html(src, dst, engines, **opts)
+    if chained is not None:
+        if chained.ok:
+            return chained
+        errs.append(f"chain: {chained.message}")
+
     last = ConvResult(False, src, dst, cands[0].name,
                       message="所有引擎均失败 → " + " | ".join(errs))
     return last
